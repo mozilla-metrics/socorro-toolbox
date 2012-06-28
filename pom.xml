@@ -96,12 +96,12 @@
 		<dependency>
 			<groupId>org.codehaus.jackson</groupId>
 			<artifactId>jackson-core-asl</artifactId>
-			<version>1.9.0</version>
+			<version>1.9.7</version>
 		</dependency>
 		<dependency>
 			<groupId>org.codehaus.jackson</groupId>
 			<artifactId>jackson-mapper-asl</artifactId>
-			<version>1.9.0</version>
+			<version>1.9.7</version>
 		</dependency>
 
 		<!-- Cloudera Hadoop, HBase -->
@@ -348,7 +348,7 @@
 		<dependency>
 			<groupId>com.mozilla</groupId>
 			<artifactId>akela</artifactId>
-			<version>0.2-SNAPSHOT</version>
+			<version>0.4-SNAPSHOT</version>
 		</dependency>
 
 	</dependencies>
