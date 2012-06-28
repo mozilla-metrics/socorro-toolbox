@@ -1,5 +1,5 @@
-REGISTER 'akela-0.4-SNAPSHOT.jar'
 REGISTER 'socorro-toolbox-0.1-SNAPSHOT.jar'
+REGISTER 'lib/akela-0.4-SNAPSHOT.jar'
 
 SET pig.logfile socorro-modulelist.log;
 SET default_parallel 30; 
