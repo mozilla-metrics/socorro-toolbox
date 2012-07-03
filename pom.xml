@@ -77,10 +77,6 @@
 					<groupId>commons-cli</groupId>
 				</exclusion>
 				<exclusion>
-					<artifactId>commons-logging</artifactId>
-					<groupId>commons-logging</groupId>
-				</exclusion>
-				<exclusion>
 					<artifactId>jsp-api</artifactId>
 					<groupId>javax.servlet</groupId>
 				</exclusion>
@@ -164,6 +160,11 @@
 		</dependency>
 		
 		<!-- Pig -->
+		<dependency>
+			<groupId>commons-logging</groupId>
+			<artifactId>commons-logging</artifactId>
+			<version>1.1.1</version>
+		</dependency>
 		<dependency>
 			<groupId>org.apache.pig</groupId>
 			<artifactId>pig</artifactId>
@@ -293,7 +294,7 @@
 				</exclusion>
 			</exclusions>
 		</dependency>
-
+		
 	</dependencies>
 
 	<build>
