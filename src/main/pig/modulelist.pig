@@ -17,17 +17,17 @@ raw = LOAD 'hbase://crash_reports' USING com.mozilla.pig.load.HBaseMultiScanLoad
 genmap = FOREACH raw GENERATE JsonMap(processed_json) AS processed_json_map:map[];
 product_filtered = FILTER genmap BY processed_json_map#'product' == 'Firefox' AND 
                                     processed_json_map#'os_name' == 'Windows NT';
-modules = FOREACH product_filtered GENERATE FLATTEN(ModuleBag(processed_json_map#'dump')) AS 
-                                            (module:chararray, libname:chararray, version:chararray, 
-                                            pdb:chararray, checksum:chararray, addr_start:chararray, 
+modules = FOREACH product_filtered GENERATE FLATTEN(ModuleBag(processed_json_map#'dump')) AS
+                                            (libname:chararray, version:chararray,
+                                            pdb:chararray, checksum:chararray, addr_start:chararray,
                                             addr_end:chararray, unknown:chararray);
-fltrd = FILTER modules BY module IS NOT NULL AND 
-                          version IS NOT NULL AND 
+fltrd = FILTER modules BY libname IS NOT NULL AND
+                          version IS NOT NULL AND
                           pdb IS NOT NULL AND
                           checksum IS NOT NULL;
-ss = FOREACH fltrd GENERATE module,version,pdb,checksum;
+ss = FOREACH fltrd GENERATE libname,version,pdb,checksum;
 /* Ask pig mailing list why this works but DISTINCT ss; doesn't */
-grpd = GROUP ss BY (module,version,pdb,checksum);
+grpd = GROUP ss BY (libname,version,pdb,checksum);
 distinct_modules = FOREACH grpd GENERATE FLATTEN(group);
 
 STORE distinct_modules INTO 'modulelist-$start_date-$end_date' USING PigStorage(',');
