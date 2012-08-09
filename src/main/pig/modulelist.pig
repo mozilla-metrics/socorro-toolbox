@@ -18,16 +18,16 @@ genmap = FOREACH raw GENERATE JsonMap(processed_json) AS processed_json_map:map[
 product_filtered = FILTER genmap BY processed_json_map#'product' == 'Firefox' AND 
                                     processed_json_map#'os_name' == 'Windows NT';
 modules = FOREACH product_filtered GENERATE FLATTEN(ModuleBag(processed_json_map#'dump')) AS
-                                            (libname:chararray, version:chararray,
-                                            pdb:chararray, checksum:chararray, addr_start:chararray,
-                                            addr_end:chararray, unknown:chararray);
-fltrd = FILTER modules BY libname IS NOT NULL AND
+                                            (filename:chararray, version:chararray,
+                                            debug_file:chararray, debug_id:chararray, base_addr:chararray,
+                                            max_addr:chararray, is_main_module:chararray);
+fltrd = FILTER modules BY filename IS NOT NULL AND
                           version IS NOT NULL AND
-                          pdb IS NOT NULL AND
-                          checksum IS NOT NULL;
-ss = FOREACH fltrd GENERATE libname,version,pdb,checksum;
+                          debug_file IS NOT NULL AND
+                          debug_id IS NOT NULL;
+ss = FOREACH fltrd GENERATE filename,version,debug_file,debug_id;
 /* Ask pig mailing list why this works but DISTINCT ss; doesn't */
-grpd = GROUP ss BY (libname,version,pdb,checksum);
+grpd = GROUP ss BY (filename,version,debug_file,debug_id);
 distinct_modules = FOREACH grpd GENERATE FLATTEN(group);
 
 STORE distinct_modules INTO 'modulelist-$start_date-$end_date' USING PigStorage(',');
