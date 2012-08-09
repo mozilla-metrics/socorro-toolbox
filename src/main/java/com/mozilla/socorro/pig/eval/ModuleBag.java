@@ -46,8 +46,7 @@ public class ModuleBag extends EvalFunc<DataBag> {
         DataBag db = bagFactory.newDefaultBag();
         for (String dumpline : newlinePattern.split((String)input.get(0))) {
             if (dumpline.startsWith(MODULE_PREFIX)) {
-                // TODO: validate??
-                // module_str, libname, version, pdb, checksum, addrstart, addrend, unknown
+                // module_str, filename, version, debug file, debug ID, base address, max address, is main module
                 String[] splits = pipePattern.split(dumpline, -1);
                 Tuple t = tupleFactory.newTuple(splits.length-1);
                 for (int i=1; i < splits.length; i++) {
