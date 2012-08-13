@@ -1,5 +1,5 @@
 REGISTER 'socorro-toolbox-0.1-SNAPSHOT.jar'
-REGISTER 'lib/akela-0.4-SNAPSHOT.jar'
+REGISTER 'akela-0.4-SNAPSHOT.jar'
 
 SET pig.logfile socorro-modulelist.log;
 SET default_parallel 30; 
@@ -21,10 +21,10 @@ modules = FOREACH product_filtered GENERATE FLATTEN(ModuleBag(processed_json_map
                                             (filename:chararray, version:chararray,
                                             debug_file:chararray, debug_id:chararray, base_addr:chararray,
                                             max_addr:chararray, is_main_module:chararray);
-fltrd = FILTER modules BY filename IS NOT NULL AND
-                          version IS NOT NULL AND
-                          debug_file IS NOT NULL AND
-                          debug_id IS NOT NULL;
+fltrd = FILTER modules BY filename matches '.*\\.dll$' AND
+                          (version matches '\\d+\\.\\d+\\.\\d+\\.\\d+' OR version == '') AND
+                          (debug_file matches '.*\\.pdb$' OR debug_file == '') AND
+                          (SIZE(debug_id) == 33 OR debug_id == '');
 ss = FOREACH fltrd GENERATE filename,version,debug_file,debug_id;
 /* Ask pig mailing list why this works but DISTINCT ss; doesn't */
 grpd = GROUP ss BY (filename,version,debug_file,debug_id);
