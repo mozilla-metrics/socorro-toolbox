@@ -27,7 +27,7 @@ fltrd = FILTER modules BY filename matches '.*\\.dll$' AND
                           (SIZE(debug_id) == 33 OR debug_id == '');
 ss = FOREACH fltrd GENERATE filename,version,debug_file,debug_id;
 /* Ask pig mailing list why this works but DISTINCT ss; doesn't */
-grpd = GROUP ss BY (filename,version,debug_file,debug_id);
+grpd = GROUP ss BY (filename,debug_file,debug_id,version);
 distinct_modules = FOREACH grpd GENERATE FLATTEN(group);
 
 STORE distinct_modules INTO 'modulelist-$start_date-$end_date' USING PigStorage(',');
