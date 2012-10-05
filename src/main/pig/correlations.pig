@@ -15,10 +15,10 @@ raw = LOAD 'hbase://crash_reports' USING com.mozilla.pig.load.HBaseMultiScanLoad
                                                                                    'true') AS 
                                                                                    (k:bytearray, processed_json:chararray);
 genmap = FOREACH raw GENERATE JsonMap(processed_json) AS processed_json_map:map[];
-modules = FOREACH genmap GENERATE processed_json_map#'product' AS product:chararray,
-                                  processed_json_map#'version' AS version:chararray,
-                                  processed_json_map#'os_name' AS os_name:chararray,
-                                  processed_json_map#'reason' AS reason:chararray,
+modules = FOREACH genmap GENERATE processed_json_map#'product' AS product:bytearray,
+                                  processed_json_map#'version' AS version:bytearray,
+                                  processed_json_map#'os_name' AS os_name:bytearray,
+                                  processed_json_map#'reason' AS reason:bytearray,
                                   FLATTEN(ModuleBag(processed_json_map#'dump')) AS
                                           (filename:chararray, module_version:chararray,
                                            debug_file:chararray, debug_id:chararray, base_addr:chararray,
