@@ -56,14 +56,6 @@ SELECT
   bsg.AdapterVendorID,
   bsg.AdapterDeviceID,
   bsg.c,
-  /*
-  total_by_signature,
-  total_by_graphics,
-  grand_total,
-  bsg.c::float / grand_total::float AS p_sig_graphics,
-  total_by_signature::float / grand_total::float AS p_sig,
-  total_by_graphics::float / grand_total::float AS p_graphics,
-  */
   (bsg.c::float * grand_total::float) /
   (total_by_signature::float * total_by_graphics::float) AS correlation
 FROM
