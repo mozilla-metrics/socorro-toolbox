@@ -57,6 +57,7 @@ SELECT
   bsg.AdapterDeviceID,
   bsg.c,
   total_by_signature,
+  total_by_graphics,
   (bsg.c::float * grand_total::float) /
   (total_by_signature::float * total_by_graphics::float) AS correlation
 FROM
@@ -85,7 +86,8 @@ WITH BySignatureGraphics AS (
     signature_id,
     substring(r.app_notes from E'AdapterVendorID: (?:0x)?(\\\\w+)') AS AdapterVendorID,
     substring(r.app_notes from E'AdapterDeviceID: (?:0x)?(\\\\w+)') AS AdapterDeviceID,
-    COUNT(DISTINCT r.install_age) AS c
+    COUNT(DISTINCT r.install_age) AS count_distinct,
+    COUNT(*) AS count_total
   FROM
     reports r JOIN reports_clean rc ON rc.uuid = r.uuid
   WHERE
@@ -103,7 +105,8 @@ WITH BySignatureGraphics AS (
 BySignature AS (
   SELECT
     signature_id,
-    SUM(c) AS total_by_signature
+    SUM(count_distinct) AS distinct_by_signature,
+    SUM(count_total) AS total_by_signature
   FROM BySignatureGraphics
   GROUP BY signature_id
 ),
@@ -111,22 +114,24 @@ ByGraphics AS (
   SELECT
     AdapterVendorID,
     AdapterDeviceID,
-    SUM(c) AS total_by_graphics
+    SUM(count_distinct) AS distinct_by_graphics,
+    SUM(count_total) AS total_by_graphics
   FROM BySignatureGraphics
   GROUP BY AdapterVendorID, AdapterDeviceID
 ),
 AllCrashes AS (
-  SELECT SUM(c) AS grand_total
+  SELECT SUM(count_distinct) AS distinct_total
   FROM BySignatureGraphics
 )
 SELECT
   s.signature,
   bsg.AdapterVendorID,
   bsg.AdapterDeviceID,
-  bsg.c,
+  bsg.count_distinct,
   total_by_signature,
-  (bsg.c::float * grand_total::float) /
-  (total_by_signature::float * total_by_graphics::float) AS correlation
+  total_by_graphics,
+  (bsg.count_distinct::float * distinct_total::float) /
+  (distinct_by_signature::float * distinct_by_graphics::float) AS correlation
 FROM
   BySignatureGraphics AS bsg
   JOIN BySignature ON BySignature.signature_id = bsg.signature_id
@@ -138,29 +143,33 @@ FROM
     ON bsg.signature_id = s.signature_id
 """
 
-cur.execute(q)
+cur.execute(q2)
 
 results = []
 
-Result = namedtuple('Result', ('signature', 'vendorid', 'deviceid', 'correlation', 'c'))
+Result = namedtuple('Result', ('signature', 'vendorid', 'deviceid', 'correlation', 'devicetotal', 'signaturetotal'))
 
-for signature, vendorid, deviceid, c, bysig, correlation in cur:
-    # if less than 20 unique users have experienced this crash, the correlation
-    # is going to be really noisy and probably meaningless
-    if bysig < 20:
+for signature, vendorid, deviceid, c, bysig, bygraph, correlation in cur:
+    # Let's only care about topcrashes
+    if bysig < 150:
         continue
-    # if only one user with this graphics card experienced the crash, same deal
-    if c < 2:
-        continue
-    if correlation < 2:
-        continue
-    results.append(Result(signature, vendorid, deviceid, correlation, c))
 
-results.sort(key=lambda r: r.correlation, reverse=True)
+    if bygraph < 50:
+        continue
+
+    # Also, if less than 20 (SWAG!) unique users have experienced this crash,
+    # the correlation is going to be really noisy and probably meaningless.
+
+    if correlation < 4:
+        continue
+    results.append(Result(signature, vendorid, deviceid, correlation, c, bysig))
+
+# results.sort(key=lambda r: r.correlation, reverse=True)
+results.sort(key=lambda r: (r.signaturetotal, r.correlation), reverse=True)
 
 w = csv.writer(sys.stdout)
-w.writerow(('signature', 'vendorid', 'deviceid', 'correlation', 'c'))
+w.writerow(('signature', 'vendorid', 'deviceid', 'correlation', 'devicetotal', 'signaturetotal'))
 
 for r in results:
     correlation = "{0:.2f}".format(r.correlation)
-    w.writerow((r.signature, r.vendorid, r.deviceid, correlation, r.c))
+    w.writerow((r.signature, r.vendorid, r.deviceid, correlation, r.devicetotal, r.signaturetotal))
