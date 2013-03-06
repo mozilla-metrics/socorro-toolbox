@@ -56,6 +56,7 @@ SELECT
   bsg.AdapterVendorID,
   bsg.AdapterDeviceID,
   bsg.c,
+  total_by_signature,
   (bsg.c::float * grand_total::float) /
   (total_by_signature::float * total_by_graphics::float) AS correlation
 FROM
@@ -137,7 +138,7 @@ FROM
     ON bsg.signature_id = s.signature_id
 """
 
-cur.execute(q2)
+cur.execute(q)
 
 results = []
 
