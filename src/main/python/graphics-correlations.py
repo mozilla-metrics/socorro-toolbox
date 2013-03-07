@@ -8,8 +8,13 @@ connectionstring = open(os.path.expanduser('~/socorro.connection'), 'r').read().
 conn = psycopg2.connect(connectionstring)
 cur = conn.cursor()
 
-productversion = 1402
+startdate = '2013-02-27'
+enddate = '2013-03-07'
+productversion = 1439
 
+# Note: the startdate/enddate are substituted by python into the query string.
+# This is required so that the partition optimizer can exclude irrelevant
+# partitions. The product version is passed as a bound parameter.
 
 q = """
 WITH BySignatureGraphics AS (
@@ -21,15 +26,15 @@ WITH BySignatureGraphics AS (
   FROM
     reports r JOIN reports_clean rc ON rc.uuid = r.uuid
   WHERE
-    r.date_processed > '2013-03-04'
-    AND r.date_processed < '2013-03-06'
-    AND rc.date_processed > '2013-03-04'
-    AND rc.date_processed < '2013-03-06'
+    r.date_processed > '%(startdate)s'
+    AND r.date_processed < '%(enddate)s'
+    AND rc.date_processed > '%(startdate)s'
+    AND rc.date_processed < '%(enddate)s'
     AND r.app_notes ~ E'AdapterVendorID: (?:0x)?(\\\\w+)'
     AND r.app_notes ~ E'AdapterDeviceID: (?:0x)?(\\\\w+)'
     AND r.os_name ~ 'Windows NT'
     AND r.hangid IS NULL
-    AND rc.product_version_id = 1402
+    AND rc.product_version_id = %%(product_version_id)s
   GROUP BY signature_id, AdapterVendorID, AdapterDeviceID
 ),
 BySignature AS (
@@ -69,7 +74,7 @@ FROM
   CROSS JOIN AllCrashes
   JOIN signatures AS s
     ON bsg.signature_id = s.signature_id
-"""
+""" % {'startdate': startdate, 'enddate': enddate}
 
 # In this alternate query, we're counting installs (unique install dates)
 # instead of total crashes. This reduces the effect of a small number of
@@ -91,15 +96,15 @@ WITH BySignatureGraphics AS (
   FROM
     reports r JOIN reports_clean rc ON rc.uuid = r.uuid
   WHERE
-    r.date_processed > '2013-03-04'
-    AND r.date_processed < '2013-03-06'
-    AND rc.date_processed > '2013-03-04'
-    AND rc.date_processed < '2013-03-06'
+    r.date_processed > '%(startdate)s'
+    AND r.date_processed < '%(enddate)s'
+    AND rc.date_processed > '%(startdate)s'
+    AND rc.date_processed < '%(enddate)s'
     AND r.app_notes ~ E'AdapterVendorID: (?:0x)?(\\\\w+)'
     AND r.app_notes ~ E'AdapterDeviceID: (?:0x)?(\\\\w+)'
     AND r.os_name ~ 'Windows NT'
     AND r.hangid IS NULL
-    AND rc.product_version_id = 1402
+    AND rc.product_version_id = %%(product_version_id)s
   GROUP BY signature_id, AdapterVendorID, AdapterDeviceID
 ),
 BySignature AS (
@@ -141,35 +146,45 @@ FROM
   CROSS JOIN AllCrashes
   JOIN signatures AS s
     ON bsg.signature_id = s.signature_id
-"""
-
-cur.execute(q2)
-
-results = []
+""" % {'startdate': startdate, 'enddate': enddate}
 
 Result = namedtuple('Result', ('signature', 'vendorid', 'deviceid', 'correlation', 'devicetotal', 'signaturetotal'))
 
-for signature, vendorid, deviceid, c, bysig, bygraph, correlation in cur:
-    # Let's only care about topcrashes
-    if bysig < 150:
-        continue
+def savedata(cur, filename):
+    results = []
+    for signature, vendorid, deviceid, c, bysig, bygraph, correlation in cur:
+        # Let's only care about topcrashes
+        if bysig < 150:
+            continue
 
-    if bygraph < 50:
-        continue
+        if bygraph < 50:
+            continue
 
-    # Also, if less than 20 (SWAG!) unique users have experienced this crash,
-    # the correlation is going to be really noisy and probably meaningless.
+        # Also, if less than 20 (SWAG!) unique users have experienced this crash,
+        # the correlation is going to be really noisy and probably meaningless.
 
-    if correlation < 4:
-        continue
-    results.append(Result(signature, vendorid, deviceid, correlation, c, bysig))
+        if correlation < 4:
+            continue
+        results.append(Result(signature, vendorid, deviceid, correlation, c, bysig))
 
-# results.sort(key=lambda r: r.correlation, reverse=True)
-results.sort(key=lambda r: (r.signaturetotal, r.correlation), reverse=True)
+    # results.sort(key=lambda r: r.correlation, reverse=True)
+    results.sort(key=lambda r: (r.signaturetotal, r.correlation), reverse=True)
 
-w = csv.writer(sys.stdout)
-w.writerow(('signature', 'vendorid', 'deviceid', 'correlation', 'devicetotal', 'signaturetotal'))
+    fd = open(filename, 'w')
+    w = csv.writer(fd)
+    w.writerow(('signature', 'vendorid', 'deviceid', 'correlation', 'devicetotal', 'signaturetotal'))
 
-for r in results:
-    correlation = "{0:.2f}".format(r.correlation)
-    w.writerow((r.signature, r.vendorid, r.deviceid, correlation, r.devicetotal, r.signaturetotal))
+    for r in results:
+        correlation = "{0:.2f}".format(r.correlation)
+        w.writerow((r.signature, r.vendorid, r.deviceid, correlation, r.devicetotal, r.signaturetotal))
+
+    fd.close()
+
+outpattern, = sys.argv[1:]
+
+cur.execute(q, {'product_version_id': productversion})
+savedata(cur, outpattern + '.csv')
+
+cur.execute(q2, {'product_version_id': productversion})
+savedata(cur, outpattern + '-byinstall.csv')
+
