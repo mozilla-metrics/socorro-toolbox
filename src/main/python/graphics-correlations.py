@@ -1,27 +1,57 @@
+from optparse import OptionParser
 import psycopg2
 import os, sys
 import csv
+import re
 from collections import namedtuple
+
+p = OptionParser(usage='usage: %prog [options] outfile')
+p.add_option('-V', '--product-version', dest='productversion',
+             help='Firefox version', default=None)
+p.add_option('-s', '--start-date', dest='startdate',
+             help='Start date (YYYY-MM-DD)', default=None)
+p.add_option('-e', '--end-date', dest='enddate',
+             help='End date (YYYY-MM-DD)', default=None)
+p.add_option('-c', '--cutoff', dest='cutoff',
+             help="Minimum cutoff", default=50)
+
+opts, args = p.parse_args()
+
+if len(args) != 1 or opts.productversion is None or opts.startdate is None or opts.enddate is None:
+    p.error("Required arguments missing")
+    sys.exit(1)
+
+datere = re.compile(r'\d{4}-\d{2}-\d{2}$')
+if datere.match(opts.startdate) is None or datere.match(opts.enddate) is None:
+    p.print_usage()
+    sys.exit(1)
+
+outpattern, = args
 
 connectionstring = open(os.path.expanduser('~/socorro.connection'), 'r').read().strip()
 
 conn = psycopg2.connect(connectionstring)
 cur = conn.cursor()
 
-startdate = '2013-02-27'
-enddate = '2013-03-07'
-productversion = 1439
+cur.execute('''
+  SELECT product_version_id
+  FROM product_versions
+  WHERE product_name = 'Firefox' AND version_string = %s''', (opts.productversion,))
+if cur.rowcount != 1:
+    print >>sys.stderr, "More than one build has version '%s'" % opts.productversion
+    sys.exit(2)
+
+productversion, = cur.fetchone()
 
 # Note: the startdate/enddate are substituted by python into the query string.
 # This is required so that the partition optimizer can exclude irrelevant
 # partitions. The product version is passed as a bound parameter.
 
-q = """
+byvendorq = """
 WITH BySignatureGraphics AS (
   SELECT
     signature_id,
     substring(r.app_notes from E'AdapterVendorID: (?:0x)?(\\\\w+)') AS AdapterVendorID,
-    substring(r.app_notes from E'AdapterDeviceID: (?:0x)?(\\\\w+)') AS AdapterDeviceID,
     COUNT(*) AS c
   FROM
     reports r JOIN reports_clean rc ON rc.uuid = r.uuid
@@ -31,11 +61,10 @@ WITH BySignatureGraphics AS (
     AND rc.date_processed > '%(startdate)s'
     AND rc.date_processed < '%(enddate)s'
     AND r.app_notes ~ E'AdapterVendorID: (?:0x)?(\\\\w+)'
-    AND r.app_notes ~ E'AdapterDeviceID: (?:0x)?(\\\\w+)'
     AND r.os_name ~ 'Windows NT'
     AND r.hangid IS NULL
     AND rc.product_version_id = %%(product_version_id)s
-  GROUP BY signature_id, AdapterVendorID, AdapterDeviceID
+  GROUP BY signature_id, AdapterVendorID
 ),
 BySignature AS (
   SELECT
@@ -47,144 +76,161 @@ BySignature AS (
 ByGraphics AS (
   SELECT
     AdapterVendorID,
-    AdapterDeviceID,
     SUM(c) AS total_by_graphics
   FROM BySignatureGraphics
-  GROUP BY AdapterVendorID, AdapterDeviceID
+  GROUP BY AdapterVendorID
 ),
 AllCrashes AS (
   SELECT SUM(c) AS grand_total
   FROM BySignatureGraphics
+),
+Correlations AS (
+  SELECT
+    s.signature,
+    bsg.AdapterVendorID,
+    bsg.c,
+    total_by_signature,
+    total_by_graphics,
+    (bsg.c::float * grand_total::float) /
+    (total_by_signature::float * total_by_graphics::float) AS correlation,
+    grand_total
+  FROM
+    BySignatureGraphics AS bsg
+    JOIN BySignature ON BySignature.signature_id = bsg.signature_id
+    JOIN ByGraphics ON
+      ByGraphics.AdapterVendorID = bsg.AdapterVendorID
+    CROSS JOIN AllCrashes
+    JOIN signatures AS s
+      ON bsg.signature_id = s.signature_id
+  WHERE
+    bsg.c > 25
+    AND total_by_signature > %%(cutoff)s
+    AND bsg.AdapterVendorID != '0000'
+),
+HighCorrelation AS (
+  SELECT
+    signature,
+    MAX(correlation) AS highcorrelation
+  FROM Correlations
+  GROUP BY signature
 )
 SELECT
-  s.signature,
-  bsg.AdapterVendorID,
-  bsg.AdapterDeviceID,
-  bsg.c,
-  total_by_signature,
-  total_by_graphics,
-  (bsg.c::float * grand_total::float) /
-  (total_by_signature::float * total_by_graphics::float) AS correlation
+  Correlations.*
 FROM
-  BySignatureGraphics AS bsg
-  JOIN BySignature ON BySignature.signature_id = bsg.signature_id
-  JOIN ByGraphics ON
-    ByGraphics.AdapterVendorID = bsg.AdapterVendorID
-    AND ByGraphics.AdapterDeviceID = bsg.AdapterDeviceID
-  CROSS JOIN AllCrashes
-  JOIN signatures AS s
-    ON bsg.signature_id = s.signature_id
-""" % {'startdate': startdate, 'enddate': enddate}
+  Correlations
+  JOIN HighCorrelation ON
+    Correlations.signature = HighCorrelation.signature
+WHERE highcorrelation > 2
+""" % {'startdate': opts.startdate, 'enddate': opts.enddate}
 
-# In this alternate query, we're counting installs (unique install dates)
-# instead of total crashes. This reduces the effect of a small number of
-# users with many crashes skewing the correlation results. This is good for
-# for figuring out whether a correlation is significant, but may be less
-# useful if a user is actually more likely to crash *because* of the graphics
-# hardware, instead of just being the unlucky user doing the magic something
-# needed to trigger the crash. Which result to use really depends on the
-# situation.
-
-q2 = """
-WITH BySignatureGraphics AS (
+bycpufamilyq = """
+WITH BySignatureCPU AS (
   SELECT
     signature_id,
-    substring(r.app_notes from E'AdapterVendorID: (?:0x)?(\\\\w+)') AS AdapterVendorID,
-    substring(r.app_notes from E'AdapterDeviceID: (?:0x)?(\\\\w+)') AS AdapterDeviceID,
-    COUNT(DISTINCT r.install_age) AS count_distinct,
-    COUNT(*) AS count_total
+    substring(r.cpu_info FROM E'\\\\A(\\\\w+ family \\\\d+) model \\\\d+ stepping \\\\d+( \\\\| \\\\d+)?\\\\Z') AS cpufamily,
+    COUNT(*) AS c
   FROM
-    reports r JOIN reports_clean rc ON rc.uuid = r.uuid
+    reports r JOIN reports_clean rc on rc.uuid = r.uuid
   WHERE
     r.date_processed > '%(startdate)s'
     AND r.date_processed < '%(enddate)s'
     AND rc.date_processed > '%(startdate)s'
     AND rc.date_processed < '%(enddate)s'
-    AND r.app_notes ~ E'AdapterVendorID: (?:0x)?(\\\\w+)'
-    AND r.app_notes ~ E'AdapterDeviceID: (?:0x)?(\\\\w+)'
     AND r.os_name ~ 'Windows NT'
     AND r.hangid IS NULL
     AND rc.product_version_id = %%(product_version_id)s
-  GROUP BY signature_id, AdapterVendorID, AdapterDeviceID
+    AND r.cpu_info ~ E'\\\\A(\\\\w+ family \\\\d+) model \\\\d+ stepping \\\\d+( \\\\| \\\\d+)?\\\\Z'
+  GROUP BY signature_id, cpufamily
 ),
 BySignature AS (
   SELECT
     signature_id,
-    SUM(count_distinct) AS distinct_by_signature,
-    SUM(count_total) AS total_by_signature
-  FROM BySignatureGraphics
+    SUM(c) AS total_by_signature
+  FROM BySignatureCPU
   GROUP BY signature_id
 ),
-ByGraphics AS (
+ByCPU AS (
   SELECT
-    AdapterVendorID,
-    AdapterDeviceID,
-    SUM(count_distinct) AS distinct_by_graphics,
-    SUM(count_total) AS total_by_graphics
-  FROM BySignatureGraphics
-  GROUP BY AdapterVendorID, AdapterDeviceID
+    cpufamily,
+    SUM(c) AS total_by_cpu
+  FROM BySignatureCPU
+  GROUP BY cpufamily
 ),
 AllCrashes AS (
-  SELECT SUM(count_distinct) AS distinct_total
-  FROM BySignatureGraphics
+  SELECT SUM(c) AS grand_total
+  FROM BySignatureCPU
+),
+Correlations AS (
+  SELECT
+    s.signature,
+    bsg.cpufamily,
+    bsg.c,
+    total_by_signature,
+    total_by_cpu,
+    (bsg.c::float * grand_total::float) /
+    (total_by_signature::float * total_by_cpu::float) AS correlation,
+    grand_total
+  FROM
+    BySignatureCPU AS bsg
+    JOIN BySignature ON BySignature.signature_id = bsg.signature_id
+    JOIN ByCPU ON
+      ByCPU.cpufamily = bsg.cpufamily
+    CROSS JOIN AllCrashes
+    JOIN signatures AS s
+      ON bsg.signature_id = s.signature_id
+  WHERE
+    total_by_signature > %%(cutoff)s
+),
+HighCorrelation AS (
+  SELECT
+    signature,
+    MAX(correlation) AS highcorrelation
+  FROM Correlations
+  GROUP BY signature
 )
 SELECT
-  s.signature,
-  bsg.AdapterVendorID,
-  bsg.AdapterDeviceID,
-  bsg.count_distinct,
-  total_by_signature,
-  total_by_graphics,
-  (bsg.count_distinct::float * distinct_total::float) /
-  (distinct_by_signature::float * distinct_by_graphics::float) AS correlation
+  Correlations.*
 FROM
-  BySignatureGraphics AS bsg
-  JOIN BySignature ON BySignature.signature_id = bsg.signature_id
-  JOIN ByGraphics ON
-    ByGraphics.AdapterVendorID = bsg.AdapterVendorID
-    AND ByGraphics.AdapterDeviceID = bsg.AdapterDeviceID
-  CROSS JOIN AllCrashes
-  JOIN signatures AS s
-    ON bsg.signature_id = s.signature_id
-""" % {'startdate': startdate, 'enddate': enddate}
+  Correlations
+  JOIN HighCorrelation ON
+    Correlations.signature = HighCorrelation.signature
+WHERE highcorrelation > 2
+""" % {'startdate': opts.startdate, 'enddate': opts.enddate}
 
-Result = namedtuple('Result', ('signature', 'vendorid', 'deviceid', 'correlation', 'devicetotal', 'signaturetotal'))
+Result = namedtuple('Result', ('signature', 'vendorid', 'c', 'bysig', 'bygraphics', 'grandtotal', 'correlation'))
 
 def savedata(cur, filename):
     results = []
-    for signature, vendorid, deviceid, c, bysig, bygraph, correlation in cur:
-        # Let's only care about topcrashes
-        if bysig < 150:
-            continue
-
-        if bygraph < 50:
-            continue
+    for signature, vendorid, c, bysig, bygraphics, correlation, grandtotal in cur:
+        # if bygraph < 50:
+        #     continue
 
         # Also, if less than 20 (SWAG!) unique users have experienced this crash,
         # the correlation is going to be really noisy and probably meaningless.
 
-        if correlation < 4:
-            continue
-        results.append(Result(signature, vendorid, deviceid, correlation, c, bysig))
+        # if correlation < 4:
+        #     continue
+        results.append(Result(signature, vendorid, c, bysig, bygraphics, grandtotal, correlation))
 
-    # results.sort(key=lambda r: r.correlation, reverse=True)
-    results.sort(key=lambda r: (r.signaturetotal, r.correlation), reverse=True)
+    results.sort(key=lambda r: (r.bysig, r.correlation), reverse=True)
 
     fd = open(filename, 'w')
     w = csv.writer(fd)
-    w.writerow(('signature', 'vendorid', 'deviceid', 'correlation', 'devicetotal', 'signaturetotal'))
+    w.writerow(('signature', 'vendorid', 'c', 'bysig', 'bygraphics', 'grandtotal', 'correlation'))
 
     for r in results:
         correlation = "{0:.2f}".format(r.correlation)
-        w.writerow((r.signature, r.vendorid, r.deviceid, correlation, r.devicetotal, r.signaturetotal))
+        w.writerow((r.signature, r.vendorid, r.c, r.bysig, r.bygraphics, r.grandtotal, correlation))
 
     fd.close()
 
-outpattern, = sys.argv[1:]
+params = {
+    'product_version_id': productversion,
+    'cutoff': opts.cutoff
+    }
 
-cur.execute(q, {'product_version_id': productversion})
-savedata(cur, outpattern + '.csv')
+cur.execute(byvendorq, params)
+savedata(cur, outpattern + 'byadaptervendor.csv')
 
-cur.execute(q2, {'product_version_id': productversion})
-savedata(cur, outpattern + '-byinstall.csv')
-
+cur.execute(bycpufamilyq, params)
+savedata(cur, outpattern + 'bycpufamily.csv')
