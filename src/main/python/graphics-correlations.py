@@ -120,7 +120,6 @@ FROM
   Correlations
   JOIN HighCorrelation ON
     Correlations.signature = HighCorrelation.signature
-WHERE highcorrelation > 2
 """ % {'startdate': opts.startdate, 'enddate': opts.enddate}
 
 bycpufamilyq = """
@@ -212,7 +211,7 @@ def savedata(cur, filename):
         #     continue
         results.append(Result(signature, vendorid, c, bysig, bygraphics, grandtotal, correlation))
 
-    results.sort(key=lambda r: (r.bysig, r.correlation), reverse=True)
+    results.sort(key=lambda r: (r.bysig, r.signature, r.correlation), reverse=True)
 
     fd = open(filename, 'w')
     w = csv.writer(fd)
