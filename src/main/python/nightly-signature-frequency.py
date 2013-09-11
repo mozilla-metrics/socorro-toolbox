@@ -10,8 +10,19 @@ p.add_option('-s', '--start-date', dest='startdate', type='date',
              help='Start date', default=date.today() - timedelta(days=14))
 p.add_option('-e', '--end-date', dest='enddate', type='date',
              help='End date', default=date.today())
+p.add_option('-c', '--channel', dest='channel', type='string',
+             help='Channel name', default='nightly')
 
 opts, (signature,) = p.parse_args()
+
+channels = {
+    'nightly': 'mozilla-central',
+    'aurora': 'mozilla-aurora',
+}
+
+if opts.channel not in channels:
+    print >>sys.stderr, "Channel '%s' unknown: add it to the channels map" % opts.channel
+    sys.exit(2)
 
 connectionstring = open(os.path.expanduser('~/socorro.connection'), 'r').read().strip()
 
@@ -25,7 +36,7 @@ WITH build_adus AS (
   WHERE
     product_name = 'Firefox' AND
     product_os_platform = 'Windows' AND
-    build_channel = 'nightly' AND
+    build_channel = %(channel)s AND
     date >= %(startdate)s AND date <= %(enddate)s AND
     date < to_date(substring(build from 1 for 8), 'YYYYMMDD') + interval '10 days'
   GROUP BY build
@@ -56,13 +67,16 @@ FROM releases_raw
 WHERE
   product_name = 'firefox' AND
   platform = 'win32' AND
-  build_type = 'Nightly' AND
-  repository = 'mozilla-central' AND
+  build_type = %(studlyChannel)s AND
+  repository = %(repository)s AND
   to_date(substring(build_id::text from 1 for 8), 'YYYYMMDD') BETWEEN %(startdate)s AND %(enddate)s
 ORDER BY build_id
   ''', {'startdate': opts.startdate,
         'enddate': opts.enddate,
-        'signature': signature})
+        'signature': signature,
+        'channel': opts.channel,
+        'studlyChannel': opts.channel.capitalize(),
+        'repository': channels[opts.channel]})
 
 csvw = csv.writer(sys.stdout)
 
