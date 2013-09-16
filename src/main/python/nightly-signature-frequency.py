@@ -13,7 +13,11 @@ p.add_option('-e', '--end-date', dest='enddate', type='date',
 p.add_option('-c', '--channel', dest='channel', type='string',
              help='Channel name', default='nightly')
 
-opts, (signature,) = p.parse_args()
+opts, signatures = p.parse_args()
+
+if len(signatures) == 0:
+    print >>sys.stderr, "At least one signature must be specified"
+    sys.exit(2)
 
 channels = {
     'nightly': 'mozilla-central',
@@ -49,7 +53,7 @@ sigreports AS (
     JOIN product_versions ON reports_clean.product_version_id = product_versions.product_version_id
   WHERE
     date_processed >= %(startdate)s AND date_processed <= %(enddate)s + interval '10 days' AND
-    signature = %(signature)s AND
+    signature = ANY (%(signatures)s) AND
     product_name = 'Firefox'
   GROUP BY build
 )
@@ -73,7 +77,7 @@ WHERE
 ORDER BY build_id
   ''', {'startdate': opts.startdate,
         'enddate': opts.enddate,
-        'signature': signature,
+        'signatures': signatures,
         'channel': opts.channel,
         'studlyChannel': opts.channel.capitalize(),
         'repository': channels[opts.channel]})
