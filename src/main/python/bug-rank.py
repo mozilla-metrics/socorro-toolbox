@@ -35,6 +35,11 @@ apiurl = '%s/TCBS/?%s' % (crashapi,
 
 topdata = json.load(urllib2.urlopen(apiurl))
 
+if len(topdata['crashes']) < 300:
+    print >>sys.stderr, """Error: Fewer topcrashes than expected. Check crash-stats.mozilla.com
+for a list of the most recent versions."""
+    sys.exit(1)
+
 count = sum(crash['count']
             for crash in topdata['crashes']
             if crash['signature'] in sigs)
