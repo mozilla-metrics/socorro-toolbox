@@ -3,7 +3,6 @@ import dateoption
 from datetime import date, timedelta
 import psycopg2
 import os, sys
-import csv
 
 p = OptionParser(option_class=dateoption.OptionWithDate)
 p.add_option('-s', '--start-date', dest='startdate', type='date',
@@ -12,16 +11,34 @@ p.add_option('-e', '--end-date', dest='enddate', type='date',
              help='End date', default=date.today())
 p.add_option('-c', '--channel', dest='channel', type='string',
              help='Channel name', default='nightly')
+p.add_option('-g', '--graph', action="store_true", dest='graph',
+             help='Produce graph instead of CSV', default=False)
+p.add_option('-b', '--bug', dest="bugs", action="append", type="int",
+             default=[], help="Signatures from bug")
+p.add_option('--search', dest="search", type="string", default=None,
+             help="Signature regex")
 
 opts, signatures = p.parse_args()
 
-if len(signatures) == 0:
-    print >>sys.stderr, "At least one signature must be specified"
-    sys.exit(2)
+for bugid in opts.bugs:
+    import signaturesbybug
+    signatures.extend(signaturesbybug.signatures_by_bug(bugid))
+
+if opts.search:
+    if len(signatures):
+        print >>sys.stderr, "Search and signatures cannot both be used"
+        sys.exit(2)
+    searchterm = "signature ~ (%(search)s)"
+else:
+    if len(signatures) == 0:
+        print >>sys.stderr, "At least one signature must be specified"
+        sys.exit(2)
+    searchterm = "signature = ANY(%(signatures))"
 
 channels = {
     'nightly': 'mozilla-central',
     'aurora': 'mozilla-aurora',
+    'beta': 'mozilla-beta',
 }
 
 if opts.channel not in channels:
@@ -52,8 +69,7 @@ sigreports AS (
     JOIN signatures ON reports_clean.signature_id = signatures.signature_id
     JOIN product_versions ON reports_clean.product_version_id = product_versions.product_version_id
   WHERE
-    date_processed >= %(startdate)s AND date_processed <= %(enddate)s + interval '10 days' AND
-    signature = ANY (%(signatures)s) AND
+    date_processed >= %(startdate)s AND date_processed <= %(enddate)s + interval '10 days' AND ''' + searchterm + ''' AND
     product_name = 'Firefox'
   GROUP BY build
 )
@@ -78,11 +94,19 @@ ORDER BY build_id
   ''', {'startdate': opts.startdate,
         'enddate': opts.enddate,
         'signatures': signatures,
+        'search': opts.search,
         'channel': opts.channel,
         'studlyChannel': opts.channel.capitalize(),
         'repository': channels[opts.channel]})
 
-csvw = csv.writer(sys.stdout)
-
-for r in cur:
-    csvw.writerow(r)
+if opts.graph:
+    import nightly_signature_graph
+    builds = map(nightly_signature_graph.RowType, cur)
+    label = "Crashes/100ADI for signature(s) %s on the %s channel" % (
+        ','.join(signatures), opts.channel)
+    nightly_signature_graph.produce_graph(builds, label, sys.stdout)
+else:
+    import csv
+    csvw = csv.writer(sys.stdout)
+    for r in cur:
+        csvw.writerow(r)
