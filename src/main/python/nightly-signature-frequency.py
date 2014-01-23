@@ -33,7 +33,7 @@ else:
     if len(signatures) == 0:
         print >>sys.stderr, "At least one signature must be specified"
         sys.exit(2)
-    searchterm = "signature = ANY(%(signatures))"
+    searchterm = "signature = ANY(%(signatures)s)"
 
 channels = {
     'nightly': 'mozilla-central',
@@ -58,7 +58,7 @@ WITH build_adus AS (
     product_name = 'Firefox' AND
     product_os_platform = 'Windows' AND
     build_channel = %(channel)s AND
-    date >= %(startdate)s AND date <= %(enddate)s AND
+    date >= %(startdate)s AND date <= %(enddate)s + interval '10 days' AND
     date < to_date(substring(build from 1 for 8), 'YYYYMMDD') + interval '10 days'
   GROUP BY build
 ),

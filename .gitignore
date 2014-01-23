@@ -16,6 +16,7 @@ target
 *.exe
 *.o
 *.so
+*.pyc
 
 # Packages #
 ############
