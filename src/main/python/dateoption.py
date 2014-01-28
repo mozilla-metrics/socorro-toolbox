@@ -1,7 +1,7 @@
 """Library for adding 'date' options to optparse."""
 
 from optparse import Option, OptionValueError
-from datetime import datetime, date
+from datetime import datetime, date, time
 from copy import copy
 import re
 
@@ -20,6 +20,16 @@ def check_date(option, opt, value):
                 pass
 
     raise OptionValueError("option %s: could not interpret %r as a date" % (opt, value))
+
+def date_to_timestamp(date):
+    """
+    Take a date instance and return a datetime with a UTC timezone
+    suitable for passing as a bound parameter in partitioned tables such as
+    reports_clean.
+    """
+    import psycopg2
+    utc = psycopg2.tz.FixedOffsetTimezone(name="UTC")
+    return datetime.combine(date, time(tzinfo=utc))
 
 class OptionWithDate(Option):
     TYPES = Option.TYPES + ('date',)

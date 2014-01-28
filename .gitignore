@@ -34,7 +34,6 @@ target
 ######################
 logs
 *.log
-*.sql
 *.sqlite
 
 # OS generated files #
