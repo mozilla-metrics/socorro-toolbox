@@ -91,8 +91,8 @@ WHERE
   repository = %(repository)s AND
   to_date(substring(build_id::text from 1 for 8), 'YYYYMMDD') BETWEEN %(startdate)s AND %(enddate)s
 ORDER BY build_id
-  ''', {'startdate': opts.startdate,
-        'enddate': opts.enddate,
+  ''', {'startdate': dateoption.date_to_timestamp(opts.startdate),
+        'enddate': dateoption.date_to_timestamp(opts.enddate),
         'signatures': signatures,
         'search': opts.search,
         'channel': opts.channel,
