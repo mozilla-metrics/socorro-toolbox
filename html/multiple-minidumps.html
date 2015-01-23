@@ -15,7 +15,7 @@
       vertical-align: top;
     }
 
-    .highlight {
+    .highlighted {
       background-color: rgb(255,244,158);
     }
 
@@ -47,6 +47,34 @@
       border: 1px solid #999;
       padding: 1px;
       margin: 0px;
+    }
+
+    .expandable.expanded {
+      cursor: zoom-out;
+    }
+    .expandable:not(.expanded) {
+      cursor: zoom-in;
+    }
+    .expandable > td:before {
+      display: inline-block;
+      background-color: #666;
+      color: white;
+      font-weight: bold;
+      padding: 2px;
+      margin: 1px;
+    }
+    .expandable:not(.expanded) > td:before {
+      content: "+";
+    }
+    .expandable.expanded > td:before {
+      content: "-";
+    }
+    .hidden > td {
+      display: none;
+    }
+    .location {
+      max-width: 24em;
+      overflow: hidden;
     }
   </style>
 <body>
