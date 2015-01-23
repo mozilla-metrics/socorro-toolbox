@@ -44,7 +44,19 @@ function appendDump(name, dump, row) {
 
 function makeFrameCell(frame, cell) {
   var label;
-  label = frame.normalized;
+  if (frame.function) {
+    label = frame.function;
+  } else if (frame.module) {
+    label = frame.module + "@" + frame.offset;
+  } else {
+    label = "@" + frame.offset;
+  }
   cell.text(label);
+  if (frame.missing_symbols) {
+    cell.classed("nosymbols", true);
+  }
+  if (frame.trust == "scan") {
+    cell.classed("scanned", true);
+  }
   return cell;
 }
