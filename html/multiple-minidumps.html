@@ -1,0 +1,49 @@
+<head>
+  <meta charset="utf-8">
+  <title>Display stacks from multi-dump hangs/crashes</title>
+  <script type="text/javascript" src="d3.v3.min.js"></script>
+  <script type="text/javascript" src="multiple-minidumps.js"></script>
+
+  <style type="text/css">
+    body {
+      font-family: sans-serif;
+      color: black;
+      background-color: white;
+    }
+
+    td {
+      vertical-align: top;
+    }
+
+    h2 {
+      font-size: 1rem;
+      font-weight: bold;
+      color: #999;
+    }
+
+    .frames {
+      border: 1px solid #999;
+      border-collapse: collapse;
+    }
+
+    .frames td {
+      border: 1px solid #999;
+      padding: 1px;
+      margin: 0px;
+    }
+  </style>
+<body>
+  <h1>Display stacks from multi-dump hangs/crashes</h1>
+
+  <form id="goForm">
+    <div>
+       Crash ID: <input id="crashID" type="text" size="35" placeholder="Crash ID">
+    <!--<div>crash-stats security token (optional): <input id="token" type="text" size="35"></div>-->
+      <input type="button" value="Go" onclick="go()">
+    </div>
+  </form>
+
+  <table id="results">
+    <tbody>
+      <tr>
+  </table>
