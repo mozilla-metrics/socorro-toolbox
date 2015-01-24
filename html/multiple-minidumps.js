@@ -29,10 +29,15 @@ function appendDump(name, dump, row) {
   head.append("td").text("Frame");
   head.append("td").text("Location");
 
+  var crashing_thread = dump.crash_info.crashing_thread;
+  if (crashing_thread === undefined) {
+    crashing_thread = 0;
+  }
+
   for (var thread_no in dump.threads) {
     var thread = dump.threads[thread_no];
 
-    var crashed = dump.crash_info.crashing_thread == thread_no;
+    var crashed = crashing_thread == thread_no;
 
     var irow = table.append("tr").classed("expandable", true);
     irow.append("td")
