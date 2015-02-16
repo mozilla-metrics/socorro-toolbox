@@ -2,13 +2,18 @@ var kURL = "https://crash-stats.mozilla.com/api/ProcessedCrash/?datatype=process
 
 var gData;
 
-function go() {
-  var id = d3.select("#crashID").property("value");
+function load(id) {
   var url = kURL + encodeURIComponent(id);
   d3.json(url, processData).on("error", function(e) {
     console.error(e);
     alert(e);
   });
+}
+
+var u = new URL(document.location.href);
+if (u.searchParams.has("crashID")) {
+  d3.select("#goForm").style("display", "none");
+  load(u.searchParams.get("crashID"));
 }
 
 function processData(d) {
